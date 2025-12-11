@@ -1,7 +1,7 @@
 // ***************************************************************
 // ⚠️ 1. REEMPLAZA ESTE VALOR con el ID real de tu Google Sheet
 // ***************************************************************
-const SPREADSHEET_ID = "1j4vfZHoaq2YqG63tAuz97gb79IWoOmJFPWlls1eZ64k"; 
+const SPREADSHEET_ID = "1yEVQX0Ylz0kTvMsU9VCIF3x7Q1ZffAVTuQ3XbXaY4dM"; 
 
 // Nombres de las pestañas
 const HOJA_CATEGORIAS = "Categorias";
@@ -9,6 +9,7 @@ const HOJA_PRODUCTOS = "Productos";
 const HOJA_COMPRAS = "Compras";
 const HOJA_VENTAS = "Ventas";
 const HOJA_RESUMEN = "resumen_diario";
+const HOJA_USUARIOS = "Usuarios";
 
 // Encabezados
 const CATEGORIAS_HEADERS = ["id", "nombre"];
@@ -16,6 +17,10 @@ const PRODUCTOS_HEADERS = ["id", "nombre", "código", "categoría", "precio_comp
 const COMPRAS_HEADERS = ["id", "producto_id", "cantidad", "precio_compra", "fecha", "proveedor"];
 const VENTAS_HEADERS = ["id", "producto_id", "cantidad", "precio_venta", "fecha", "cliente"];
 const RESUMEN_HEADERS = ["fecha", "total_ventas", "total_compras", "ganancia", "productos_vendidos"];
+const USUARIOS_HEADERS = ["usuario", "hash", "created"];
+// Credenciales por defecto (se crearán automáticamente al inicializar la BD)
+const DEFAULT_ADMIN_USER = "admin";
+const DEFAULT_ADMIN_PASS = "admin";
 
 // --- FUNCIÓN CENTRAL PARA ACCEDER A LA HOJA ---
 function getSpreadsheet() {
@@ -82,6 +87,10 @@ function doPost(e) {
             result = agregarProducto(requestData);
         } else if (action === "registrarTransaccion") {
             result = registrarTransaccion(requestData);
+        } else if (action === 'authLogin') {
+            result = authLogin(requestData);
+        } else if (action === 'createUserInternal') {
+            result = createUserInternal(requestData);
         } else {
             result = { status: "error", message: "Acción POST no reconocida." };
         }
@@ -352,6 +361,80 @@ function getData(sheetName) {
     return { status: "success", data: filteredData };
 }
 
+// --------------------- AUTENTICACIÓN (Apps Script) ---------------------
+function bytesToHex(bytes) {
+    return bytes.map(function(b){
+        var v = (b < 0) ? b + 256 : b;
+        return (v.toString(16).length === 1 ? '0' : '') + v.toString(16);
+    }).join('');
+}
+
+function hashPasswordAppsScript(password){
+    try{
+        var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, password, Utilities.Charset.UTF_8);
+        return bytesToHex(raw);
+    }catch(e){
+        throw new Error('Error al generar hash: ' + e.message);
+    }
+}
+
+function authLogin(data){
+    if(!data || !data.usuario || !data.password) return { status: 'error', message: 'Faltan credenciales.' };
+    var usuario = String(data.usuario).trim();
+    var password = String(data.password);
+
+    var check = getData(HOJA_USUARIOS);
+    if(check.status !== 'success') return { status: 'error', message: 'No hay usuarios configurados.' };
+    var users = check.data;
+
+    for(var i=0;i<users.length;i++){
+        if(String(users[i].usuario).toLowerCase() === usuario.toLowerCase()){
+            var storedHash = users[i].hash || '';
+            var incomingHash = hashPasswordAppsScript(password);
+            if(storedHash === incomingHash){
+                return { status: 'success', message: 'Autenticación correcta', user: usuario };
+            } else {
+                return { status: 'error', message: 'Credenciales inválidas' };
+            }
+        }
+    }
+    return { status: 'error', message: 'Usuario no encontrado' };
+}
+
+function createUserInternal(data){
+    // data.usuario, data.password, data.adminKey
+    if(!data || !data.usuario || !data.password || !data.adminKey) return { status: 'error', message: 'Faltan parámetros.' };
+    var adminKey = String(data.adminKey);
+    var props = PropertiesService.getScriptProperties();
+    var stored = props.getProperty('ADMIN_KEY');
+    if(!stored) return { status: 'error', message: 'Clave admin no configurada en Properties. Configure ADMIN_KEY.' };
+    if(adminKey !== stored) return { status: 'error', message: 'Clave admin inválida.' };
+
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName(HOJA_USUARIOS);
+    if(!sheet) return { status: 'error', message: `La pestaña '${HOJA_USUARIOS}' no existe. Inicie la Base de Datos.` };
+
+    // validar existencia
+    var existing = getData(HOJA_USUARIOS);
+    var usuario = String(data.usuario).trim();
+    if(existing.status === 'success'){
+        var arr = existing.data;
+        for(var i=0;i<arr.length;i++){
+            if(String(arr[i].usuario).toLowerCase() === usuario.toLowerCase()){
+                return { status: 'error', message: 'El usuario ya existe.' };
+            }
+        }
+    }
+
+    var hashed = hashPasswordAppsScript(String(data.password));
+    try{
+        sheet.appendRow([usuario, hashed, new Date()]);
+        return { status: 'success', message: 'Usuario creado correctamente.' };
+    }catch(e){
+        return { status: 'error', message: 'Error al crear usuario: ' + e.message };
+    }
+}
+
 function findProductRow(sheetProductos, productoId) {
     try {
         const data = sheetProductos.getDataRange().getValues();
@@ -401,6 +484,19 @@ function iniciarBaseDeDatos() {
     msg.push(createOrResetSheet(ss, HOJA_COMPRAS, COMPRAS_HEADERS));
     msg.push(createOrResetSheet(ss, HOJA_VENTAS, VENTAS_HEADERS));
     msg.push(createOrResetSheet(ss, HOJA_RESUMEN, RESUMEN_HEADERS));
+    msg.push(createOrResetSheet(ss, HOJA_USUARIOS, USUARIOS_HEADERS));
+
+    // Añadir usuario admin por defecto si la hoja está vacía (sólo encabezados)
+    try{
+        var sheetUsers = ss.getSheetByName(HOJA_USUARIOS);
+        if(sheetUsers && sheetUsers.getLastRow() < 2){
+            var hashed = hashPasswordAppsScript(String(DEFAULT_ADMIN_PASS));
+            sheetUsers.appendRow([String(DEFAULT_ADMIN_USER), hashed, new Date()]);
+            msg.push(`Usuario por defecto '${DEFAULT_ADMIN_USER}' creado.`);
+        }
+    }catch(e){
+        msg.push(`No fue posible crear usuario admin: ${e.message}`);
+    }
 
     return { status: "success", message: `Base de datos inicializada: ${msg.join(" ")}` };
 }
@@ -424,6 +520,19 @@ function resetearBaseDeDatos() {
     msg.push(createOrResetSheet(ss, HOJA_COMPRAS, COMPRAS_HEADERS));
     msg.push(createOrResetSheet(ss, HOJA_VENTAS, VENTAS_HEADERS));
     msg.push(createOrResetSheet(ss, HOJA_RESUMEN, RESUMEN_HEADERS));
+    msg.push(createOrResetSheet(ss, HOJA_USUARIOS, USUARIOS_HEADERS));
+
+    // Añadir usuario admin por defecto si la hoja está vacía (sólo encabezados)
+    try{
+        var sheetUsers2 = ss.getSheetByName(HOJA_USUARIOS);
+        if(sheetUsers2 && sheetUsers2.getLastRow() < 2){
+            var hashed2 = hashPasswordAppsScript(String(DEFAULT_ADMIN_PASS));
+            sheetUsers2.appendRow([String(DEFAULT_ADMIN_USER), hashed2, new Date()]);
+            msg.push(`Usuario por defecto '${DEFAULT_ADMIN_USER}' creado.`);
+        }
+    }catch(e){
+        msg.push(`No fue posible crear usuario admin: ${e.message}`);
+    }
 
     return { status: "success", message: `Base de datos reseteada completamente: ${msg.join(" ")}` };
 }

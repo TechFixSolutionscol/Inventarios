@@ -9,10 +9,17 @@
     <!-- Librería de Gráficos (Chart.js) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="estilo.css">
+    <script src="auth.js"></script>
 </head>
 <body>
 
+    
+
     <div class="dashboard-container">
+        <div id="authBox" style="position:fixed;top:12px;right:12px;background:var(--card-bg,#fff);padding:8px 12px;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.12);z-index:9999;display:flex;gap:8px;align-items:center">
+            <span id="currentUserLabel" style="font-weight:600;color:var(--primary-color)">Usuario: —</span>
+            <button id="logoutBtn" class="btn secondary-btn" style="padding:6px 10px;">Cerrar sesión</button>
+        </div>
         <!-- Barra Lateral -->
         <aside class="sidebar">
             <div class="logo">
@@ -286,6 +293,34 @@
             </section>
         </main>
     </div>
+
+    <script>
+        // Mostrar usuario actual y manejar logout sin modificar lógica existente
+        document.addEventListener('DOMContentLoaded', ()=>{
+            try{
+                const label = document.getElementById('currentUserLabel');
+                const logoutBtn = document.getElementById('logoutBtn');
+
+                function refresh(){
+                    const u = window.InvAuth && typeof window.InvAuth.currentUser === 'function' ? window.InvAuth.currentUser() : null;
+                    label.textContent = u ? ('Usuario: ' + u) : 'Usuario: —';
+                    logoutBtn.style.display = u ? 'inline-flex' : 'none';
+                }
+
+                refresh();
+
+                logoutBtn.addEventListener('click', ()=>{
+                    if(confirm('¿Cerrar sesión?')){
+                        try{ window.InvAuth && window.InvAuth.logout && window.InvAuth.logout(); }catch(e){}
+                        location.href = 'login.html';
+                    }
+                });
+
+                // Por si `InvAuth` se inicializa después
+                setTimeout(refresh, 300);
+            }catch(e){/* no bloquear */}
+        });
+    </script>
 
     <script src="script.js"></script>
 

@@ -1,4 +1,4 @@
-     const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwLUWJs-PhULiqDi6zbNctVZGqzitqXEViBBEDRQbQVUvdta0HWxTRj2Q4_nCUtxSzY9g/exec'; 
+     const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwYg0MptACyrUfnDQNmC5Z6r5VLtB7i4kQ9WRtSFdOn-WxTy7JBZPbO5EwoUkCXgPmt/exec'; 
         let productDataCache = {};
         let resumenFinancieroChart, tendenciasChart;
 
