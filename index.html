@@ -12,8 +12,24 @@
     <script src="auth.js"></script>
 </head>
 <body>
-
-    
+    <script>
+        // Verificación automática: redirige a login si no hay usuario autenticado
+        document.addEventListener('DOMContentLoaded', ()=>{
+            try{
+                // Si `InvAuth` ya está disponible, usarla directamente
+                if(window.InvAuth && typeof window.InvAuth.currentUser === 'function'){
+                    const u = window.InvAuth.currentUser();
+                    if(!u) location.href = 'login.html';
+                    return;
+                }
+                // Si no, esperar un momento por si `auth.js` se inicializa
+                setTimeout(()=>{
+                    const u = window.InvAuth && typeof window.InvAuth.currentUser === 'function' ? window.InvAuth.currentUser() : null;
+                    if(!u) location.href = 'login.html';
+                }, 200);
+            }catch(e){ /* no bloquear la app si hay error */ }
+        });
+    </script>
 
     <div class="dashboard-container">
         <div id="authBox" style="position:fixed;top:12px;right:12px;background:var(--card-bg,#fff);padding:8px 12px;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.12);z-index:9999;display:flex;gap:8px;align-items:center">

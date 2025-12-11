@@ -49,15 +49,44 @@
         return true;
     }
 
+    // Intentar autenticación contra el servidor Apps Script; si falla la red, usar respaldo local
     async function login(username, password){
         username = String(username).trim();
-        const users = getUsers();
-        const entry = users[username];
-        if(!entry) throw new Error('Usuario no encontrado');
-        const hashed = await hashPassword(password);
-        if(hashed !== entry.hash) throw new Error('Contraseña incorrecta');
-        localStorage.setItem('inv_current_user', username);
-        return true;
+
+        // URL del Web App (coincide con SCRIPT_URL en script.js)
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwYg0MptACyrUfnDQNmC5Z6r5VLtB7i4kQ9WRtSFdOn-WxTy7JBZPbO5EwoUkCXgPmt/exec';
+
+        // Primero intentar autenticación remota
+        try{
+            const resp = await fetch(SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'authLogin', usuario: username, password: password })
+            });
+
+            const data = await resp.json();
+            if(data && data.status === 'success'){
+                localStorage.setItem('inv_current_user', username);
+                return true;
+            }
+            // Si el servidor responde con error de credenciales, lanzar
+            if(data && data.status === 'error'){
+                throw new Error(data.message || 'Credenciales inválidas');
+            }
+        }catch(serverErr){
+            // Si hay fallo de red/servidor, intentamos respaldo local
+            console.warn('Auth servidor falló:', serverErr && serverErr.message);
+            const users = getUsers();
+            const entry = users[username];
+            if(!entry) throw new Error('Usuario no encontrado (y servidor no disponible)');
+            const hashed = await hashPassword(password);
+            if(hashed !== entry.hash) throw new Error('Contraseña incorrecta (y servidor no disponible)');
+            localStorage.setItem('inv_current_user', username);
+            return true;
+        }
+
+        // Si llegamos aquí, no fue posible autenticar
+        throw new Error('Autenticación fallida');
     }
 
     function logout(){

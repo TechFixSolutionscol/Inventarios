@@ -91,6 +91,8 @@ function doPost(e) {
             result = authLogin(requestData);
         } else if (action === 'createUserInternal') {
             result = createUserInternal(requestData);
+        } else if (action === 'migrateUsersToHash') {
+            result = migrateUsersToHash(requestData);
         } else {
             result = { status: "error", message: "Acción POST no reconocida." };
         }
@@ -389,13 +391,25 @@ function authLogin(data){
 
     for(var i=0;i<users.length;i++){
         if(String(users[i].usuario).toLowerCase() === usuario.toLowerCase()){
-            var storedHash = users[i].hash || '';
+            var storedHash = String(users[i].hash || '');
             var incomingHash = hashPasswordAppsScript(password);
-            if(storedHash === incomingHash){
+
+            // Aceptar si la celda contiene el hash SHA-256 o la contraseña en claro
+            if(storedHash === incomingHash) {
                 return { status: 'success', message: 'Autenticación correcta', user: usuario };
-            } else {
-                return { status: 'error', message: 'Credenciales inválidas' };
             }
+
+            // También permitir autenticación si el valor almacenado coincide exactamente con la contraseña enviada
+            if(storedHash === password) {
+                return { status: 'success', message: 'Autenticación correcta (contraseña en claro)', user: usuario };
+            }
+
+            // Intentar comparar con trim y sin mayúsculas por si el valor fue guardado con espacios
+            if(storedHash.trim() === incomingHash || storedHash.trim() === password.trim()) {
+                return { status: 'success', message: 'Autenticación correcta', user: usuario };
+            }
+
+            return { status: 'error', message: 'Credenciales inválidas' };
         }
     }
     return { status: 'error', message: 'Usuario no encontrado' };
@@ -433,6 +447,52 @@ function createUserInternal(data){
     }catch(e){
         return { status: 'error', message: 'Error al crear usuario: ' + e.message };
     }
+}
+
+/**
+ * Migrar contraseñas en claro en la hoja `Usuarios` a hashes SHA-256.
+ * Requiere objeto { adminKey: '...' } con la clave guardada en Script Properties (ADMIN_KEY).
+ */
+function migrateUsersToHash(data){
+    if(!data || !data.adminKey) return { status: 'error', message: 'Falta adminKey.' };
+    var props = PropertiesService.getScriptProperties();
+    var stored = props.getProperty('ADMIN_KEY');
+    if(!stored) return { status: 'error', message: 'Clave admin no configurada en Properties. Configure ADMIN_KEY.' };
+    if(String(data.adminKey) !== stored) return { status: 'error', message: 'Clave admin inválida.' };
+
+    var ss = getSpreadsheet();
+    var sheet = ss.getSheetByName(HOJA_USUARIOS);
+    if(!sheet) return { status: 'error', message: `La pestaña '${HOJA_USUARIOS}' no existe.` };
+
+    var range = sheet.getDataRange().getValues();
+    // encabezados en la fila 1
+    if(range.length < 2) return { status: 'success', message: 'No hay usuarios para migrar.' };
+
+    var converted = 0;
+    var hexRegex = /^[a-f0-9]{64}$/i;
+
+    // iterar filas desde la segunda (índice 1)
+    for(var i = 1; i < range.length; i++){
+        var row = range[i];
+        var usuario = String(row[0] || '').trim();
+        var storedVal = String(row[1] || '');
+        if(!usuario) continue;
+        // si está vacío o ya parece un hash, saltar
+        if(!storedVal) continue;
+        if(hexRegex.test(storedVal.trim())) continue;
+
+        // convertir: storedVal se interpreta como contraseña en claro -> calcular hash
+        try{
+            var hashed = hashPasswordAppsScript(storedVal);
+            sheet.getRange(i+1, 2).setValue(hashed); // columna B (índice 2)
+            converted++;
+        }catch(e){
+            // registrar y continuar
+            // no usar Logger aquí para no romper la ejecución
+        }
+    }
+
+    return { status: 'success', message: `Migración completa. ${converted} contraseñas convertidas a hash.` };
 }
 
 function findProductRow(sheetProductos, productoId) {
