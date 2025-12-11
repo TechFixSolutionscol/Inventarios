@@ -21,6 +21,8 @@ const USUARIOS_HEADERS = ["usuario", "hash", "created"];
 // Credenciales por defecto (se crearán automáticamente al inicializar la BD)
 const DEFAULT_ADMIN_USER = "admin";
 const DEFAULT_ADMIN_PASS = "admin";
+// Clave admin fija (fallback) para crear usuarios si no está en Script Properties
+const ADMIN_KEY_CONST = "Excol123**";
 
 // --- FUNCIÓN CENTRAL PARA ACCEDER A LA HOJA ---
 function getSpreadsheet() {
@@ -421,8 +423,12 @@ function createUserInternal(data){
     var adminKey = String(data.adminKey);
     var props = PropertiesService.getScriptProperties();
     var stored = props.getProperty('ADMIN_KEY');
-    if(!stored) return { status: 'error', message: 'Clave admin no configurada en Properties. Configure ADMIN_KEY.' };
-    if(adminKey !== stored) return { status: 'error', message: 'Clave admin inválida.' };
+    // Si existe ADMIN_KEY en Properties, usarla; si no, permitir la constante ADMIN_KEY_CONST
+    if(stored) {
+        if(adminKey !== stored) return { status: 'error', message: 'Clave admin inválida.' };
+    } else {
+        if(adminKey !== ADMIN_KEY_CONST) return { status: 'error', message: 'Clave admin inválida.' };
+    }
 
     var ss = getSpreadsheet();
     var sheet = ss.getSheetByName(HOJA_USUARIOS);
@@ -457,8 +463,12 @@ function migrateUsersToHash(data){
     if(!data || !data.adminKey) return { status: 'error', message: 'Falta adminKey.' };
     var props = PropertiesService.getScriptProperties();
     var stored = props.getProperty('ADMIN_KEY');
-    if(!stored) return { status: 'error', message: 'Clave admin no configurada en Properties. Configure ADMIN_KEY.' };
-    if(String(data.adminKey) !== stored) return { status: 'error', message: 'Clave admin inválida.' };
+    // permitir clave desde Properties o usar la constante ADMIN_KEY_CONST si no está configurada
+    if(stored) {
+        if(String(data.adminKey) !== stored) return { status: 'error', message: 'Clave admin inválida.' };
+    } else {
+        if(String(data.adminKey) !== ADMIN_KEY_CONST) return { status: 'error', message: 'Clave admin inválida.' };
+    }
 
     var ss = getSpreadsheet();
     var sheet = ss.getSheetByName(HOJA_USUARIOS);

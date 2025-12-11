@@ -82,6 +82,37 @@
                     handleConfigAction('resetear');
                 }
             });
+            // Crear usuario (usa endpoint createUserInternal)
+            const createBtn = document.getElementById('createUserBtn');
+            if (createBtn) {
+                createBtn.addEventListener('click', async () => {
+                    try {
+                        const usuario = window.prompt('Usuario (nuevo):');
+                        if (!usuario) return;
+                        const password = window.prompt('Contraseña para ' + usuario + ':');
+                        if (password === null) return;
+                        const adminKey = window.prompt('Clave admin (ADMIN_KEY) para autorizar creación:');
+                        if (adminKey === null) return;
+
+                        displayStatus('statusConfig', 'info', 'Creando usuario...');
+
+                        const resp = await fetch(`${SCRIPT_URL}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            body: JSON.stringify({ action: 'createUserInternal', usuario: usuario, password: password, adminKey: adminKey })
+                        });
+
+                        const data = await resp.json();
+                        if (data && data.status === 'success') {
+                            displayStatus('statusConfig', 'success', data.message || 'Usuario creado.');
+                        } else {
+                            displayStatus('statusConfig', 'error', data && data.message ? data.message : 'Error al crear usuario.');
+                        }
+                    } catch (err) {
+                        displayStatus('statusConfig', 'error', 'Error al crear usuario: ' + (err.message || err));
+                    }
+                });
+            }
 
             // Categorías y Productos
             document.getElementById('categoriaForm').addEventListener('submit', (e) => handlePostAction(e, 'agregarCategoria', 'statusCategoria'));
